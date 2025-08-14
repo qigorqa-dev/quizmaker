@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Quiz Maker — v16 Sprint1 Fix Clean v2</title>
+  <style>
+    :root { --bg:#0f172a; --card:#0b1220; --text:#e5e7eb; --muted:#94a3b8; --line:#334155; --ok:#22c55e; --bad:#ef4444; }
+    *{ box-sizing: border-box; }
+    body{font-family: ui-sans-serif, system-ui, -apple-system; margin: 24px; background:var(--bg); color:var(--text);}
+    .wrap{max-width: 1000px; margin: 0 auto;}
+    .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:14px 0;}
+    textarea{width:100%; min-height:220px; resize: none; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:10px;}
+    input{background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:8px 10px;}
+    button{background:#1f2937; border:1px solid var(--line); color:var(--text); border-radius:12px; padding:10px 14px; cursor:pointer;}
+    .row{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+    .muted{color:var(--muted); font-size:12px}
+    .chip{display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid var(--line); font-size:12px;}
+    .chip.ok{border-color:#14532d; background:#052e14; color:var(--ok);}
+    .chip.bad{border-color:#7f1d1d; background:#2a0a0a; color:var(--bad);}
+    .options label{display:block; border:1px solid var(--line); border-radius:12px; padding:10px; margin:8px 0; cursor:pointer;}
+    .theory{border-left:3px solid #64748b; padding:10px 12px; background:#0a1326; border-radius:10px;}
+    .grid2{display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:center;}
+  
+    .counter{ display:flex; justify-content:space-between; margin-top:6px; font-size:12px; color:var(--muted); }
+    .counter .over{ color:var(--bad); font-weight:600; }</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="grid2">
+    <h1>Quiz Maker</h1>
+    <div id="status" class="chip">проверка модели…</div>
+  </div>
+
+  <div class="card" id="auth">
+    <div class="row">
+      <input id="email" placeholder="email">
+      <input type="password" id="pwd" placeholder="пароль (≥ 8)">
+      <button id="login">Войти</button>
+      <button id="register">Регистрация</button>
+      <button id="logout" style="display:none">Выйти</button>
+      <span id="amsg" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card" id="screen-input" style="display:none">
+    <h3>Текст</h3>
+    <textarea id="text" placeholder="Вставьте сюда исходный текст..." maxlength="50000"></textarea>
+<div class="counter"><span id="charCounter">0 / 50000</span><span class="muted">макс. 50 000 символов</span></div>
+    <div class="row" style="margin-top:10px">
+      <button id="gen" disabled>Сгенерировать конспект + 5 вопросов</button>
+      <button id="cancelSumm" style="display:none">Отменить</button>
+      <span id="msg" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card" id="screen-summary" style="display:none">
+    <h3>Конспект</h3>
+    <div id="summaryBox"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="start">Начать квиз</button>
+    </div>
+  </div>
+
+  <div class="card" id="screen-quiz" style="display:none">
+    <div class="row" style="justify-content:space-between;">
+      <div id="progress" class="muted">Вопрос —</div>
+      <div id="score" class="muted">Верно: 0 • Ошибок: 0</div>
+    </div>
+    <h3 id="qText">Вопрос</h3>
+    <div id="qOptions" class="options"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="answer" disabled>Ответить</button>
+      <span id="ack" class="muted"></span>
+    </div>
+    <div id="theoryBlock" class="theory" style="display:none; margin-top:10px"></div>
+  </div>
+
+  <div class="card" id="screen-remedial" style="display:none">
+    <h3>Работа над ошибками</h3>
+    <div id="rIntro"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="startRemedial">Начать закрепление</button>
+    </div>
+  </div>
+
+  <div class="card" id="screen-finish" style="display:none">
+    <h3 id="finishTitle">Итог</h3>
+    <div id="finishStats"></div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:'+window.env.API_PORT;
+const $ = (id)=>document.getElementById(id);
+
+let token = localStorage.getItem('auth_token') || null;
+const state = { content_id:null, summary:null, baseQs:[], session_id:null, queue:[], idx:0, correct:0, wrong:0, wrongSeeds:[] };
+
+function headers(){ const h={'Content-Type':'application/json'}; if (token) h.Authorization='Bearer '+token; return h; }
+async function get(path){
+  const r = await fetch(API+path, {  headers: headers() });
+  if (r.status === 401) { handleExpired(); throw new Error('expired'); }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function post(path, body){
+  const r = await fetch(API+path, {  headers: headers(), body: JSON.stringify(body||{}) });
+  if (r.status === 401) { handleExpired(); throw new Error('expired'); }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+})}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+function show(id){ ['screen-input','screen-summary','screen-quiz','screen-remedial','screen-finish'].forEach(x=>$(x).style.display=(x===id?'block':'none')); }
+
+const MAX_LEN = 50000;
+function updateCounter(){
+  const el = $('text');
+  const len = (el?.value || '').length;
+  const cc = $('charCounter');
+  if (cc) {
+    cc.textContent = `${len} / ${MAX_LEN}`;
+    cc.classList.toggle('over', len > MAX_LEN);
+  }
+  const btn = $('gen');
+  if (btn) btn.disabled = (len===0 || len > MAX_LEN);
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const t = $('text');
+  if (t) t.addEventListener('input', updateCounter);
+  updateCounter();
+});
+
+function handleExpired(){
+  token = null;
+  try { localStorage.removeItem('auth_token'); } catch {}
+  const auth = $('auth'); const si = $('screen-input');
+  if (auth) auth.style.display='block';
+  if (si) si.style.display='none';
+  const am = $('amsg'); if (am) am.textContent = 'Сессия истекла — войдите заново';
+}
+
+function setStatus(ok,text){ const el=$('status'); el.textContent=text; el.classList.remove('ok','bad'); el.classList.add(ok?'ok':'bad'); }
+async function health(){
+  try{
+    const h = await get('/health');
+    if(h.ready){ setStatus(true,'модель: '+h.model+' • '+h.base); $('gen').disabled=false; }
+    else setStatus(false,(h.reason==='model_not_found'?'модель не найдена':'сервер недоступен'));
+  }catch{ setStatus(false,'сервер недоступен'); }
+}
+
+$('login').onclick = async()=>{
+  try{
+    const r = await post('/auth/login', { email:$('email').value.trim(), password:$('pwd').value });
+    token = r.token; localStorage.setItem('auth_token', token);
+    $('auth').style.display='none'; $('screen-input').style.display='block'; await health();
+  }catch(e){ $('amsg').textContent = 'Ошибка: ' + e.message; }
+};
+$('register').onclick = async()=>{
+  try{
+    const r = await post('/auth/register', { email:$('email').value.trim(), password:$('pwd').value });
+    token = r.token; localStorage.setItem('auth_token', token);
+    $('auth').style.display='none'; $('screen-input').style.display='block'; await health();
+  }catch(e){ $('amsg').textContent = 'Ошибка: ' + e.message; }
+};
+
+$('logout').onclick = async()=>{
+  try{ await post('/auth/logout'); }catch{}
+  token = null;
+  try { localStorage.removeItem('auth_token'); } catch {}
+  $('auth').style.display='block';
+  $('screen-input').style.display='none';
+  $('amsg').textContent='Вы вышли из аккаунта';
+};
+
+
+if (token) { $('auth').style.display='none'; $('screen-input').style.display='block'; health(); } else health();
+
+let summCancel = { cancelled:false };
+$('gen').onclick = async ()=>{
+  const text = $('text').value.trim();
+  const $msg = $('msg');
+  if (text.length === 0) { if ($msg) $msg.textContent = 'Нет текста'; return; }
+  if (text.length > MAX_LEN) { if ($msg) $msg.textContent = `Превышен лимит: ${text.length} > ${MAX_LEN}`; return; }
+  try{
+    summCancel = { cancelled:false };
+    $('gen').disabled = true; $('cancelSumm').style.display='inline-block';
+    $msg.textContent='Генерация конспекта…';
+    const { content_id } = await post('/ingest', { text });
+    state.content_id = content_id;
+    const res = await post('/summarize', { content_id });
+    if (summCancel.cancelled) { $msg.textContent='Отменено'; return; }
+    state.summary = res.summary;
+    const { questions } = await post('/questions/base', { content_id });
+    state.baseQs = questions;
+    renderSummary(state.summary);
+    show('screen-summary'); $msg.textContent='';
+  }catch(e){ $('msg').textContent='Ошибка: '+e.message; }
+  finally { $('gen').disabled=false; $('cancelSumm').style.display='none'; }
+};
+$('cancelSumm').onclick = ()=>{ summCancel.cancelled = true; $('msg').textContent='Отмена… дождитесь завершения запроса'; };
+
+function renderSummary(summary){
+  const box=$('summaryBox'); box.innerHTML='';
+  const ul=document.createElement('ul');
+  (summary.summary||[]).forEach(x=>{ const li=document.createElement('li'); li.textContent=x.text; ul.appendChild(li); });
+  box.appendChild(ul);
+}
+
+$('start').onclick = async ()=>{
+  const r = await post('/session', { content_id: state.content_id, questions: state.baseQs });
+  state.session_id = r.session_id;
+  state.queue = r.queue; state.idx=0; state.correct=0; state.wrong=0; state.wrongSeeds=[];
+  show('screen-quiz'); renderQuestion(state.queue[0]);
+};
+
+function renderQuestion(q){
+  $('qText').textContent = q.q;
+  const wrap=$('qOptions'); wrap.innerHTML='';
+  q.options.forEach((opt,i)=>{
+    const id='opt_'+i; const lab=document.createElement('label'); const input=document.createElement('input');
+    input.type='radio'; input.name='opt'; input.value=i; input.id=id;
+    input.addEventListener('change',()=> $('answer').disabled=false);
+    lab.htmlFor=id; lab.appendChild(input); lab.append(' '+opt);
+    wrap.appendChild(lab);
+  });
+  $('answer').disabled=true; $('ack').textContent=''; $('theoryBlock').style.display='none'; $('theoryBlock').innerHTML='';
+  document.getElementById('progress').textContent='Вопрос '+(state.idx+1)+' из '+state.queue.length;
+  document.getElementById('score').textContent='Верно: '+state.correct+' • Ошибок: '+state.wrong;
+}
+
+$('answer').onclick = async ()=>{
+  const chosen = document.querySelector('input[name="opt"]:checked'); if(!chosen) return;
+  const q = state.queue[state.idx];
+  const r = await post('/answer', { session_id: state.session_id, chosen_index: Number(chosen.value), question: q });
+  if (r.is_correct){ state.correct++; $('ack').textContent='Верно!'; } else { state.wrong++; $('ack').textContent='Неверно'; state.wrongSeeds.push(q); }
+  state.idx++;
+  if (state.idx < state.queue.length){ setTimeout(()=>renderQuestion(state.queue[state.idx]), 150); return; }
+
+  if (state.queue.length===5){
+    if (state.correct===5){ await post('/finish',{ session_id: state.session_id, content_id: state.content_id }); finish(true); return; }
+    if (state.correct===0){
+      document.getElementById('rIntro').innerHTML = '<p>0/5. Будет расширенная теория и 15 вопросов.</p>';
+      show('screen-remedial');
+      document.getElementById('startRemedial').onclick = async ()=>{
+        const r = await post('/remedial/mega',{ session_id: state.session_id, content_id: state.content_id });
+        document.getElementById('theoryBlock').innerHTML = r.theory||''; document.getElementById('theoryBlock').style.display='block';
+        state.queue = r.questions; state.idx=0; state.wrongSeeds=[];
+        show('screen-quiz'); renderQuestion(state.queue[0]);
+      };
+      return;
+    }
+    const prev = await post('/remedial/preview',{ session_id: state.session_id });
+    document.getElementById('rIntro').innerHTML = '<p>Ошибки: '+prev.wrongSeeds+'. Вопросов для закрепления: '+prev.remedialQuestionsPlanned+'</p>';
+    show('screen-remedial');
+    document.getElementById('startRemedial').onclick = async ()=>{
+      const r = await post('/remedial',{ session_id: state.session_id, content_id: state.content_id });
+      const theoryHtml = r.blocks.map(b => b.theory ? ('<h4>Теория</h4>'+b.theory) : '').join('<hr>');
+      if (theoryHtml){ document.getElementById('theoryBlock').innerHTML=theoryHtml; document.getElementById('theoryBlock').style.display='block'; }
+      state.queue = r.queue; state.idx=0; state.wrongSeeds=[];
+      show('screen-quiz'); renderQuestion(state.queue[0]);
+    };
+    return;
+  }
+
+  if (state.queue.length>5){
+    if (state.wrongSeeds.length){
+      const prev = await post('/remedial/preview',{ session_id: state.session_id });
+      document.getElementById('rIntro').innerHTML = '<p>Новые ошибки: '+prev.wrongSeeds+'. Вопросов для закрепления: '+prev.remedialQuestionsPlanned+'</p>';
+      show('screen-remedial');
+      document.getElementById('startRemedial').onclick = async ()=>{
+        const r = await post('/remedial',{ session_id: state.session_id, content_id: state.content_id });
+        const theoryHtml = r.blocks.map(b => b.theory ? ('<h4>Теория</h4>'+b.theory) : '').join('<hr>');
+        if (theoryHtml){ document.getElementById('theoryBlock').innerHTML=theoryHtml; document.getElementById('theoryBlock').style.display='block'; }
+        state.queue = r.queue; state.idx=0; state.wrongSeeds=[];
+        show('screen-quiz'); renderQuestion(state.queue[0]);
+      };
+      return;
+    } else {
+      await post('/finish',{ session_id: state.session_id, content_id: state.content_id });
+      finish(false); return;
+    }
+  }
+};
+
+function finish(fullWin){
+  show('screen-finish');
+  document.getElementById('finishTitle').textContent = fullWin ? 'Поздравляем! 5/5 🎉' : 'Итог';
+  document.getElementById('finishStats').textContent = 'Верно: '+state.correct+' • Ошибок: '+state.wrong;
+}
+</script>
+</body>
+</html>

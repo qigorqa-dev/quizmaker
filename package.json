@@ -1,0 +1,17 @@
+{
+  "name": "quiz-maker-sp",
+  "version": "0.0.3",
+  "description": "Quiz Maker \u2014 Sprint 1 p.1 + char counter 50k + server limit 413 v0.0.3",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^28.2.3"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sql.js": "^1.10.2"
+  }
+}
